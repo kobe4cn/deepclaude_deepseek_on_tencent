@@ -1,0 +1,19 @@
+POST https://api.lkeap.cloud.tencent.com/v1/chat/completions
+Authorization: Bearer 
+Content-Type: application/json
+Accept: application/json
+
+{
+  "stream": true,
+  "verbose": false,
+  "messages": [
+    {
+      "content": "Rust 是一门什么样的语言？如何更好地学习和掌握，并规划合理的学习路径？",
+      "role": "user"
+    }
+  ],
+  "model": "deepseek-r1",
+  "response_format": {
+    "type": "text"
+  }
+}
