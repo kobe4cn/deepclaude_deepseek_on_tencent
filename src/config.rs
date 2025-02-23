@@ -43,9 +43,9 @@ pub struct PricingConfig {
 /// including cached and non-cached requests.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DeepSeekPricing {
-    pub input_cache_hit_price: f64,   // per million tokens
-    pub input_cache_miss_price: f64,  // per million tokens
-    pub output_price: f64,            // per million tokens
+    pub input_cache_hit_price: f64,  // per million tokens
+    pub input_cache_miss_price: f64, // per million tokens
+    pub output_price: f64,           // per million tokens
 }
 
 /// Anthropic-specific pricing configuration.
@@ -65,10 +65,10 @@ pub struct AnthropicPricing {
 /// including input, output, and caching costs.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ModelPricing {
-    pub input_price: f64,             // per million tokens
-    pub output_price: f64,            // per million tokens
-    pub cache_write_price: f64,       // per million tokens
-    pub cache_read_price: f64,        // per million tokens
+    pub input_price: f64,       // per million tokens
+    pub output_price: f64,      // per million tokens
+    pub cache_write_price: f64, // per million tokens
+    pub cache_read_price: f64,  // per million tokens
 }
 
 impl Config {

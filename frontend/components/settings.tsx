@@ -18,6 +18,7 @@ interface SettingsFormValues {
   systemPrompt: string
   deepseekApiToken: string
   anthropicApiToken: string
+  qwenApiToken: string
   deepseekHeaders: { key: string; value: string }[]
   deepseekBody: { key: string; value: string }[]
   anthropicHeaders: { key: string; value: string }[]
@@ -25,7 +26,7 @@ interface SettingsFormValues {
 }
 
 interface SettingsProps {
-  onSettingsChange: (settings: { deepseekApiToken: string; anthropicApiToken: string }) => void
+  onSettingsChange: (settings: { deepseekApiToken: string; anthropicApiToken: string; qwenApiToken: string }) => void
 }
 
 export function Settings({ onSettingsChange }: SettingsProps) {
@@ -38,6 +39,7 @@ export function Settings({ onSettingsChange }: SettingsProps) {
       systemPrompt: "You are a helpful AI assistant who excels at reasoning and responds in Markdown format. For code snippets, you wrap them in Markdown codeblocks with it's language specified.",
       deepseekApiToken: "",
       anthropicApiToken: "",
+      qwenApiToken: "",
       deepseekHeaders: [],
       deepseekBody: [],
       anthropicHeaders: [{ key: "anthropic-version", value: "2023-06-01" }],
@@ -53,7 +55,8 @@ export function Settings({ onSettingsChange }: SettingsProps) {
       form.reset(settings)
       onSettingsChange({
         deepseekApiToken: settings.deepseekApiToken,
-        anthropicApiToken: settings.anthropicApiToken
+        anthropicApiToken: settings.anthropicApiToken,
+        qwenApiToken: settings.qwenApiToken
       })
     }
   }, [form, onSettingsChange])
@@ -63,7 +66,8 @@ export function Settings({ onSettingsChange }: SettingsProps) {
     localStorage.setItem('deepclaude-settings', JSON.stringify(data))
     onSettingsChange({
       deepseekApiToken: data.deepseekApiToken,
-      anthropicApiToken: data.anthropicApiToken
+      anthropicApiToken: data.anthropicApiToken,
+      qwenApiToken: data.qwenApiToken
     })
 
     // Track settings update
@@ -71,6 +75,7 @@ export function Settings({ onSettingsChange }: SettingsProps) {
       model: data.model,
       has_deepseek_token: !!data.deepseekApiToken,
       has_anthropic_token: !!data.anthropicApiToken,
+      has_qwen_token: !!data.qwenApiToken,
       has_system_prompt: !!data.systemPrompt,
       deepseek_headers_count: data.deepseekHeaders.length,
       deepseek_body_count: data.deepseekBody.length,
@@ -116,7 +121,8 @@ export function Settings({ onSettingsChange }: SettingsProps) {
     localStorage.removeItem('deepclaude-settings')
     onSettingsChange({
       deepseekApiToken: "",
-      anthropicApiToken: ""
+      anthropicApiToken: "",
+      qwenApiToken: ""
     })
 
     // Track settings reset
@@ -227,7 +233,8 @@ export function Settings({ onSettingsChange }: SettingsProps) {
                   localStorage.setItem('deepclaude-settings', JSON.stringify(data))
                   onSettingsChange({
                     deepseekApiToken: data.deepseekApiToken,
-                    anthropicApiToken: data.anthropicApiToken
+                    anthropicApiToken: data.anthropicApiToken,
+                    qwenApiToken: data.qwenApiToken
                   })
                   toast({
                     variant: "success",
@@ -274,6 +281,22 @@ export function Settings({ onSettingsChange }: SettingsProps) {
                       <Input
                         type="password"
                         placeholder="Enter Anthropic API token..."
+                        {...field}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="qwenApiToken"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Qwen API Token</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder="Enter Qwen API token..."
                         {...field}
                       />
                     </FormControl>

@@ -18,12 +18,12 @@ mod models;
 
 use crate::{config::Config, handlers::AppState};
 use axum::routing::{post, Router};
-use tracing::Level;
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
 };
+use tracing::Level;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Application entry point.
@@ -61,7 +61,9 @@ async fn main() -> anyhow::Result<()> {
     // Create application state
     // Clone config for AppState
     let config_clone = config.clone();
-    let state = Arc::new(AppState { config: config_clone });
+    let state = Arc::new(AppState {
+        config: config_clone,
+    });
 
     // Set up CORS
     let cors = CorsLayer::new()
@@ -72,8 +74,11 @@ async fn main() -> anyhow::Result<()> {
     // Build router
     let app = Router::new()
         .route("/", post(handlers::handle_chat))
-        .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::new().level(Level::INFO))  // ✅ 记录请求信息
-        .on_response(DefaultOnResponse::new().level(Level::INFO)))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO)) // ✅ 记录请求信息
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
         .layer(cors)
         .with_state(state);
 

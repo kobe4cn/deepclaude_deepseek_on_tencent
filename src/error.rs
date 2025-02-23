@@ -8,7 +8,7 @@
 
 use axum::{
     http::StatusCode,
-    response::{IntoResponse, Response, sse::Event},
+    response::{sse::Event, IntoResponse, Response},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -51,14 +51,10 @@ pub struct ErrorDetails {
 #[derive(Error, Debug, Clone)]
 pub enum ApiError {
     #[error("Invalid request: {message}")]
-    BadRequest {
-        message: String,
-    },
+    BadRequest { message: String },
 
     #[error("Missing required header: {header}")]
-    MissingHeader {
-        header: String,
-    },
+    MissingHeader { header: String },
 
     #[error("Invalid system prompt configuration")]
     InvalidSystemPrompt,
@@ -79,15 +75,18 @@ pub enum ApiError {
         code: Option<String>,
     },
 
-    #[error("Internal server error: {message}")]
-    Internal {
+    #[error("Qwen API error: {message}")]
+    QwenError {
         message: String,
+        type_: String,
+        param: Option<String>,
+        code: Option<String>,
     },
+    #[error("Internal server error: {message}")]
+    Internal { message: String },
 
     #[error("Other error: {message}")]
-    Other {
-        message: String,
-    },
+    Other { message: String },
 }
 
 /// Implements conversion of API errors into HTTP responses.
@@ -152,6 +151,17 @@ impl IntoResponse for ApiError {
                     },
                 },
             ),
+            ApiError::QwenError { message, type_, param, code } => (
+                StatusCode::BAD_REQUEST,
+                ErrorResponse {
+                    error: ErrorDetails {
+                        message: format!("Qwen API Error: {}", message),
+                        type_: format!("qwen_{}", type_),
+                        param: param.clone(),
+                        code: code.clone(),
+                    },
+                },
+            ),
             ApiError::Internal { message } => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 ErrorResponse {
@@ -186,8 +196,8 @@ impl IntoResponse for ApiError {
 /// return `anyhow::Error`, converting them into our custom `ApiError` type.
 impl From<anyhow::Error> for ApiError {
     fn from(err: anyhow::Error) -> Self {
-        ApiError::Other { 
-            message: err.to_string() 
+        ApiError::Other {
+            message: err.to_string(),
         }
     }
 }

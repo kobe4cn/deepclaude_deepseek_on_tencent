@@ -396,7 +396,7 @@ impl DeepSeekClient {
 
         let request = self.build_request(messages, true, config);
         let client = self.client.clone();
-      
+
         Box::pin(async_stream::try_stream! {
             let request_builder=client
                 .post(DEEPSEEK_API_URL)
@@ -404,7 +404,7 @@ impl DeepSeekClient {
                 .json(&request);
             // let request_copy=request_builder.try_clone().unwrap().build().unwrap();
 
-           
+
             let mut stream = request_builder
                 .send()
                 .await
@@ -466,16 +466,8 @@ async fn test_deepseek_chat() {
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", "application/json".parse().unwrap());
     headers.insert("Accept", "application/json".parse().unwrap());
-    
-    headers.insert(
-        "Authorization",
-        format!(
-            "Bearer {}",
-            ""
-        )
-        .parse()
-        .unwrap(),
-    );
+
+    headers.insert("Authorization", format!("Bearer {}", "").parse().unwrap());
     let request_value = serde_json::json!({
         "messages": vec![Message {
             role: Role::User,

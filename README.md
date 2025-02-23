@@ -144,4 +144,27 @@ The API supports extensive configuration through the request body:
 ![Example Image](images/image6.png)
 
 
+增加Qwen 生成支持
+```
+curl -X POST "http://127.0.0.1:1337" \
+-H "Content-Type: application/json" \
+-H "Accept: application/json" \
+-H "X-DeepSeek-API-Token:<API_KEY>" \
+-H "X-Anthropic-API-Token:<API_KEY>" \
+-H "X-Qwen-API-Token:<API_KEY>" \
+-d '{
+  "stream": true,
+  "verbose": false,
+  "model": "qwen-plus",
+  "messages": [
+    {
+      "content": "Rust是一门什么样的语言，应该如何更好的学习掌握，规划合理的学习路径",
+      "role": "user"
+    }
+  ],
+ "system":"You are a helpful AI assistant who excels at reasoning and responds in Markdown format. For code snippets, you wrap them in Markdown codeblocks with it is language specified."
+}'
+```
+![Example Image](images/update1.png)
 
+![Example Image](images/update2.jpg)

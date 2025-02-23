@@ -15,13 +15,13 @@ use std::collections::HashMap;
 pub struct ApiResponse {
     pub created: DateTime<Utc>,
     pub content: Vec<ContentBlock>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deepseek_response: Option<ExternalApiResponse>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anthropic_response: Option<ExternalApiResponse>,
-    
+
     pub combined_usage: CombinedUsage,
 }
 
@@ -96,28 +96,19 @@ pub struct AnthropicUsage {
 #[serde(tag = "type")]
 pub enum StreamEvent {
     #[serde(rename = "start")]
-    Start {
-        created: DateTime<Utc>,
-    },
-    
+    Start { created: DateTime<Utc> },
+
     #[serde(rename = "content")]
-    Content {
-        content: Vec<ContentBlock>,
-    },
-    
+    Content { content: Vec<ContentBlock> },
+
     #[serde(rename = "usage")]
-    Usage {
-        usage: CombinedUsage,
-    },
-    
+    Usage { usage: CombinedUsage },
+
     #[serde(rename = "done")]
     Done,
-    
+
     #[serde(rename = "error")]
-    Error {
-        message: String,
-        code: u16,
-    },
+    Error { message: String, code: u16 },
 }
 
 impl ContentBlock {

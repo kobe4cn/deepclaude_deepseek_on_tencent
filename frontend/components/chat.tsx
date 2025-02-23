@@ -40,6 +40,7 @@ interface ChatProps {
   apiTokens: {
     deepseekApiToken: string
     anthropicApiToken: string
+    qwenApiToken: string
   }
 }
 
@@ -451,6 +452,7 @@ export function Chat({ selectedModel, onModelChange, apiTokens }: ChatProps) {
         stream: true,
         system: "You are a helpful AI assistant who excels at reasoning and responds in Markdown format. For code snippets, you wrap them in Markdown codeblocks with it's language specified.",
         verbose: false,
+        model: selectedModel,
         messages: [...messages, { content: input, role: "user" }].map(msg => ({
           content: msg.content,
           role: msg.role
@@ -468,6 +470,8 @@ export function Chat({ selectedModel, onModelChange, apiTokens }: ChatProps) {
         }
       }
 
+      console.log("requestBody: ", requestBody)
+      console.log("apiTokens: ", apiTokens)
       const response = await fetch("http://127.0.0.1:1337", {
         method: "POST",
         signal: controller.signal,
@@ -475,7 +479,8 @@ export function Chat({ selectedModel, onModelChange, apiTokens }: ChatProps) {
           "Content-Type": "application/json",
           "Accept": "application/json",
           "X-DeepSeek-API-Token": apiTokens.deepseekApiToken,
-          "X-Anthropic-API-Token": apiTokens.anthropicApiToken
+          "X-Anthropic-API-Token": apiTokens.anthropicApiToken,
+          "X-Qwen-API-Token": apiTokens.qwenApiToken
         },
         body: JSON.stringify(requestBody)
       })
@@ -815,7 +820,8 @@ export function Chat({ selectedModel, onModelChange, apiTokens }: ChatProps) {
                     "claude-3-5-haiku-20241022",
                     "claude-3-5-haiku-latest",
                     "claude-3-opus-20240229",
-                    "claude-3-opus-latest"
+                    "claude-3-opus-latest",
+                    "qwen-plus"
                   ].map((model) => (
                     <SelectItem key={model} value={model}>
                       {model}

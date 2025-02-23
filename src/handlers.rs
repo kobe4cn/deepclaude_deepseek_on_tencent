@@ -6,7 +6,7 @@
 //! usage tracking and cost calculations.
 
 use crate::{
-    clients::{AnthropicClient, DeepSeekClient},
+    clients::{AnthropicClient, DeepSeekClient, QwenClient},
     config::Config,
     error::{ApiError, Result, SseResponse},
     models::{
@@ -23,7 +23,7 @@ use chrono::Utc;
 use futures::StreamExt;
 use std::{collections::HashMap, sync::Arc};
 use tokio_stream::wrappers::ReceiverStream;
-
+use tracing::info;
 
 /// Application state shared across request handlers.
 ///
@@ -47,8 +47,7 @@ pub struct AppState {
 ///
 /// Returns `ApiError::MissingHeader` if either token is missing
 /// Returns `ApiError::BadRequest` if tokens are malformed
-fn extract_api_tokens(headers: &axum::http::HeaderMap) -> Result<(String, String)> {
-    
+fn extract_api_tokens(headers: &axum::http::HeaderMap) -> Result<(String, String, String)> {
     let deepseek_token = headers
         .get("X-DeepSeek-API-Token")
         .ok_or_else(|| ApiError::MissingHeader {
@@ -60,7 +59,6 @@ fn extract_api_tokens(headers: &axum::http::HeaderMap) -> Result<(String, String
         })?
         .to_string();
 
-    
     let anthropic_token = headers
         .get("X-Anthropic-API-Token")
         .ok_or_else(|| ApiError::MissingHeader {
@@ -71,9 +69,20 @@ fn extract_api_tokens(headers: &axum::http::HeaderMap) -> Result<(String, String
             message: "Invalid Anthropic API token".to_string(),
         })?
         .to_string();
-   
 
-    Ok((deepseek_token, anthropic_token))
+    //从header获取qwen token
+    let qwen_token = headers
+        .get("X-Qwen-API-Token")
+        .ok_or_else(|| ApiError::MissingHeader {
+            header: "X-Qwen-API-Token".to_string(),
+        })?
+        .to_str()
+        .map_err(|_| ApiError::BadRequest {
+            message: "Invalid Qwen API token".to_string(),
+        })?
+        .to_string();
+
+    Ok((deepseek_token, anthropic_token, qwen_token))
 }
 
 /// Calculates the cost of DeepSeek API usage.
@@ -211,12 +220,14 @@ pub(crate) async fn chat(
     }
 
     // Extract API tokens
-    let (deepseek_token, anthropic_token) = extract_api_tokens(&headers)?;
+    //增加获取qwen token
+    let (deepseek_token, anthropic_token, _) = extract_api_tokens(&headers)?;
 
     // Initialize clients
     let deepseek_client = DeepSeekClient::new(deepseek_token);
     let anthropic_client = AnthropicClient::new(anthropic_token);
-
+    //增加获取qwen token
+    //let qwen_client = QwenClient::new(qwen_token);
     // Get messages with system prompt
     let messages = request.get_messages_with_system();
 
@@ -366,12 +377,14 @@ pub(crate) async fn chat_stream(
     }
 
     // Extract API tokens
-    let (deepseek_token, anthropic_token) = extract_api_tokens(&headers)?;
+    //增加获取qwen token
+    let (deepseek_token, anthropic_token, qwen_token) = extract_api_tokens(&headers)?;
 
     // Initialize clients
     let deepseek_client = DeepSeekClient::new(deepseek_token);
     let anthropic_client = AnthropicClient::new(anthropic_token);
-
+    //增加获取qwen token
+    let qwen_client = QwenClient::new(qwen_token);
     // Get messages with system prompt
     let messages = request.get_messages_with_system();
 
@@ -416,7 +429,6 @@ pub(crate) async fn chat_stream(
             deepseek_client.chat_stream(messages.clone(), &request_clone.deepseek_config);
 
         while let Some(chunk) = deepseek_stream.next().await {
-            
             match chunk {
                 Ok(response) => {
                     if let Some(choice) = response.choices.first() {
@@ -478,144 +490,214 @@ pub(crate) async fn chat_stream(
                 .unwrap_or_default(),
             )))
             .await;
+        // 增加qwen模型
+        info!("request_clone.model: {:?}", request_clone.model);
+        if &request_clone.model == "qwen-plus" {
+            // Add complete thinking content to messages for Anthropic
+            let mut qwen_message = messages;
+            qwen_message.push(Message {
+                role: Role::Assistant,
+                content: format!("<thinking>\n{}\n</thinking>", complete_reasoning),
+            });
+            // info!("qwen_message: {:?}", qwen_message);
+            let mut qwen_stream = qwen_client.chat_stream(qwen_message, &request_clone.qwen_config);
 
-        // Add complete thinking content to messages for Anthropic
-        let mut anthropic_messages = messages;
-        anthropic_messages.push(Message {
-            role: Role::Assistant,
-            content: format!("<thinking>\n{}\n</thinking>", complete_reasoning),
-        });
-
-        // Stream from Anthropic
-        let mut anthropic_stream = anthropic_client.chat_stream(
-            anthropic_messages,
-            request_clone.get_system_prompt().map(String::from),
-            &request_clone.anthropic_config,
-        );
-
-        while let Some(chunk) = anthropic_stream.next().await {
-            match chunk {
-                Ok(event) => match event {
-                    crate::clients::anthropic::StreamEvent::MessageStart { message } => {
-                        // Only send content event if there's actual content to send
-                        if !message.content.is_empty() {
-                            let _ = tx
-                                .send(Ok(Event::default().event("content").data(
-                                    serde_json::to_string(&StreamEvent::Content {
-                                        content: message
-                                            .content
-                                            .into_iter()
-                                            .map(ContentBlock::from_anthropic)
-                                            .collect(),
-                                    })
-                                    .unwrap_or_default(),
-                                )))
-                                .await;
+            while let Some(chunk) = qwen_stream.next().await {
+                // info!("chunk: {:?}", chunk);
+                match chunk {
+                    Ok(event) => match event {
+                        crate::clients::qwen::StreamEvent::Message {
+                            id: _,
+                            object: _,
+                            created: _,
+                            model: _,
+                            choices,
+                            usage: _,
+                            // service_tier: _,
+                            system_fingerprint: _,
+                        } => {
+                            for choice in choices {
+                                if let Some(content) = choice.delta.content {
+                                    // info!("content: {:?}", content);
+                                    if !content.is_empty() {
+                                        let res_json =
+                                            serde_json::to_string(&StreamEvent::Content {
+                                                content: vec![ContentBlock {
+                                                    content_type: "text".to_string(),
+                                                    text: content.to_string(),
+                                                }],
+                                            })
+                                            .unwrap_or_default();
+                                        // info!("res_json: {:?}", res_json);
+                                        let _ = tx
+                                            .send(Ok(Event::default()
+                                                .event("content")
+                                                .data(res_json)))
+                                            .await;
+                                    }
+                                }
+                            }
                         }
-                    }
-                    crate::clients::anthropic::StreamEvent::ContentBlockDelta { delta, .. } => {
-                        // Send content update
+
+                        _ => {}
+                    },
+                    Err(e) => {
                         let _ = tx
-                            .send(Ok(Event::default().event("content").data(
-                                serde_json::to_string(&StreamEvent::Content {
-                                    content: vec![ContentBlock {
-                                        content_type: delta.delta_type,
-                                        text: delta.text,
-                                    }],
+                            .send(Ok(Event::default().event("error").data(
+                                serde_json::to_string(&StreamEvent::Error {
+                                    message: e.to_string(),
+                                    code: 500,
                                 })
                                 .unwrap_or_default(),
                             )))
                             .await;
+                        return;
                     }
-                    crate::clients::anthropic::StreamEvent::MessageDelta { usage, .. } => {
-                        // Send final usage stats if available
-                        if let Some(usage) = usage {
-                            let anthropic_usage = AnthropicUsage::from_anthropic(usage);
-                            let anthropic_cost = calculate_anthropic_cost(
-                                "claude-3-5-sonnet-20241022", // Default model
-                                anthropic_usage.input_tokens,
-                                anthropic_usage.output_tokens,
-                                anthropic_usage.cached_write_tokens,
-                                anthropic_usage.cached_read_tokens,
-                                &config,
-                            );
+                }
+            }
+        } else {
+            // Add complete thinking content to messages for Anthropic
+            let mut anthropic_messages = messages;
+            anthropic_messages.push(Message {
+                role: Role::Assistant,
+                content: format!("<thinking>\n{}\n</thinking>", complete_reasoning),
+            });
+            // Stream from Anthropic
+            let mut anthropic_stream = anthropic_client.chat_stream(
+                anthropic_messages,
+                request_clone.get_system_prompt().map(String::from),
+                &request_clone.anthropic_config,
+            );
 
-                            // Calculate DeepSeek costs if usage is available
-                            let (deepseek_usage, deepseek_cost) =
-                                if let Some(usage) = deepseek_usage.as_ref() {
-                                    let cost = calculate_deepseek_cost(
-                                        usage.prompt_tokens,
-                                        usage.completion_tokens,
-                                        usage.completion_tokens_details.reasoning_tokens,
-                                        usage.prompt_tokens_details.cached_tokens,
-                                        &config,
-                                    );
-
-                                    (
-                                        DeepSeekUsage {
-                                            input_tokens: usage.prompt_tokens,
-                                            output_tokens: usage.completion_tokens,
-                                            reasoning_tokens: usage
-                                                .completion_tokens_details
-                                                .reasoning_tokens,
-                                            cached_input_tokens: usage
-                                                .prompt_tokens_details
-                                                .cached_tokens,
-                                            total_tokens: usage.total_tokens,
-                                            total_cost: format_cost(cost),
-                                        },
-                                        cost,
-                                    )
-                                } else {
-                                    (
-                                        DeepSeekUsage {
-                                            input_tokens: 0,
-                                            output_tokens: 0,
-                                            reasoning_tokens: 0,
-                                            cached_input_tokens: 0,
-                                            total_tokens: 0,
-                                            total_cost: "$0.00".to_string(),
-                                        },
-                                        0.0,
-                                    )
-                                };
-
+            while let Some(chunk) = anthropic_stream.next().await {
+                // info!("chunk: {:?}", chunk);
+                match chunk {
+                    Ok(event) => match event {
+                        crate::clients::anthropic::StreamEvent::MessageStart { message } => {
+                            // Only send content event if there's actual content to send
+                            if !message.content.is_empty() {
+                                let _ = tx
+                                    .send(Ok(Event::default().event("content").data(
+                                        serde_json::to_string(&StreamEvent::Content {
+                                            content: message
+                                                .content
+                                                .into_iter()
+                                                .map(ContentBlock::from_anthropic)
+                                                .collect(),
+                                        })
+                                        .unwrap_or_default(),
+                                    )))
+                                    .await;
+                            }
+                        }
+                        crate::clients::anthropic::StreamEvent::ContentBlockDelta {
+                            delta, ..
+                        } => {
+                            // Send content update
                             let _ = tx
-                                .send(Ok(Event::default().event("usage").data(
-                                    serde_json::to_string(&StreamEvent::Usage {
-                                        usage: CombinedUsage {
-                                            total_cost: format_cost(deepseek_cost + anthropic_cost),
-                                            deepseek_usage,
-                                            anthropic_usage: AnthropicUsage {
-                                                input_tokens: anthropic_usage.input_tokens,
-                                                output_tokens: anthropic_usage.output_tokens,
-                                                cached_write_tokens: anthropic_usage
-                                                    .cached_write_tokens,
-                                                cached_read_tokens: anthropic_usage
-                                                    .cached_read_tokens,
-                                                total_tokens: anthropic_usage.total_tokens,
-                                                total_cost: format_cost(anthropic_cost),
-                                            },
-                                        },
+                                .send(Ok(Event::default().event("content").data(
+                                    serde_json::to_string(&StreamEvent::Content {
+                                        content: vec![ContentBlock {
+                                            content_type: delta.delta_type,
+                                            text: delta.text,
+                                        }],
                                     })
                                     .unwrap_or_default(),
                                 )))
                                 .await;
                         }
+                        crate::clients::anthropic::StreamEvent::MessageDelta { usage, .. } => {
+                            // Send final usage stats if available
+                            if let Some(usage) = usage {
+                                let anthropic_usage = AnthropicUsage::from_anthropic(usage);
+                                let anthropic_cost = calculate_anthropic_cost(
+                                    "claude-3-5-sonnet-20241022", // Default model
+                                    anthropic_usage.input_tokens,
+                                    anthropic_usage.output_tokens,
+                                    anthropic_usage.cached_write_tokens,
+                                    anthropic_usage.cached_read_tokens,
+                                    &config,
+                                );
+
+                                // Calculate DeepSeek costs if usage is available
+                                let (deepseek_usage, deepseek_cost) =
+                                    if let Some(usage) = deepseek_usage.as_ref() {
+                                        let cost = calculate_deepseek_cost(
+                                            usage.prompt_tokens,
+                                            usage.completion_tokens,
+                                            usage.completion_tokens_details.reasoning_tokens,
+                                            usage.prompt_tokens_details.cached_tokens,
+                                            &config,
+                                        );
+
+                                        (
+                                            DeepSeekUsage {
+                                                input_tokens: usage.prompt_tokens,
+                                                output_tokens: usage.completion_tokens,
+                                                reasoning_tokens: usage
+                                                    .completion_tokens_details
+                                                    .reasoning_tokens,
+                                                cached_input_tokens: usage
+                                                    .prompt_tokens_details
+                                                    .cached_tokens,
+                                                total_tokens: usage.total_tokens,
+                                                total_cost: format_cost(cost),
+                                            },
+                                            cost,
+                                        )
+                                    } else {
+                                        (
+                                            DeepSeekUsage {
+                                                input_tokens: 0,
+                                                output_tokens: 0,
+                                                reasoning_tokens: 0,
+                                                cached_input_tokens: 0,
+                                                total_tokens: 0,
+                                                total_cost: "$0.00".to_string(),
+                                            },
+                                            0.0,
+                                        )
+                                    };
+
+                                let _ = tx
+                                    .send(Ok(Event::default().event("usage").data(
+                                        serde_json::to_string(&StreamEvent::Usage {
+                                            usage: CombinedUsage {
+                                                total_cost: format_cost(
+                                                    deepseek_cost + anthropic_cost,
+                                                ),
+                                                deepseek_usage,
+                                                anthropic_usage: AnthropicUsage {
+                                                    input_tokens: anthropic_usage.input_tokens,
+                                                    output_tokens: anthropic_usage.output_tokens,
+                                                    cached_write_tokens: anthropic_usage
+                                                        .cached_write_tokens,
+                                                    cached_read_tokens: anthropic_usage
+                                                        .cached_read_tokens,
+                                                    total_tokens: anthropic_usage.total_tokens,
+                                                    total_cost: format_cost(anthropic_cost),
+                                                },
+                                            },
+                                        })
+                                        .unwrap_or_default(),
+                                    )))
+                                    .await;
+                            }
+                        }
+                        _ => {} // Handle other events if needed
+                    },
+                    Err(e) => {
+                        let _ = tx
+                            .send(Ok(Event::default().event("error").data(
+                                serde_json::to_string(&StreamEvent::Error {
+                                    message: e.to_string(),
+                                    code: 500,
+                                })
+                                .unwrap_or_default(),
+                            )))
+                            .await;
+                        return;
                     }
-                    _ => {} // Handle other events if needed
-                },
-                Err(e) => {
-                    let _ = tx
-                        .send(Ok(Event::default().event("error").data(
-                            serde_json::to_string(&StreamEvent::Error {
-                                message: e.to_string(),
-                                code: 500,
-                            })
-                            .unwrap_or_default(),
-                        )))
-                        .await;
-                    return;
                 }
             }
         }

@@ -43,9 +43,10 @@ use crate::{
 use futures::Stream;
 use reqwest::{header::HeaderMap, Client};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, pin::Pin};
+// use tracing::info;
 use futures::StreamExt;
 use serde_json;
+use std::{collections::HashMap, pin::Pin};
 
 pub(crate) const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL: &str = "claude-3-5-sonnet-20241022";
@@ -117,9 +118,7 @@ pub(crate) struct AnthropicMessage {
 #[serde(tag = "type")]
 pub enum StreamEvent {
     #[serde(rename = "message_start")]
-    MessageStart {
-        message: AnthropicResponse,
-    },
+    MessageStart { message: AnthropicResponse },
     #[serde(rename = "content_block_start")]
     #[allow(dead_code)]
     ContentBlockStart {
@@ -128,15 +127,10 @@ pub enum StreamEvent {
     },
     #[serde(rename = "content_block_delta")]
     #[allow(dead_code)]
-    ContentBlockDelta {
-        index: usize,
-        delta: ContentDelta,
-    },
+    ContentBlockDelta { index: usize, delta: ContentDelta },
     #[serde(rename = "content_block_stop")]
     #[allow(dead_code)]
-    ContentBlockStop {
-        index: usize,
-    },
+    ContentBlockStop { index: usize },
     #[serde(rename = "message_delta")]
     #[allow(dead_code)]
     MessageDelta {
@@ -195,31 +189,28 @@ impl AnthropicClient {
     /// Returns `ApiError::Internal` if:
     /// - The API token is invalid
     /// - Content-Type or Anthropic-Version headers cannot be constructed
-    pub(crate) fn build_headers(&self, custom_headers: Option<&HashMap<String, String>>) -> Result<HeaderMap> {
+    pub(crate) fn build_headers(
+        &self,
+        custom_headers: Option<&HashMap<String, String>>,
+    ) -> Result<HeaderMap> {
         let mut headers = HeaderMap::new();
         headers.insert(
             "x-api-key",
-            self.api_token
-                .parse()
-                .map_err(|e| ApiError::Internal { 
-                    message: format!("Invalid API token: {}", e) 
-                })?,
+            self.api_token.parse().map_err(|e| ApiError::Internal {
+                message: format!("Invalid API token: {}", e),
+            })?,
         );
         headers.insert(
             "content-type",
-            "application/json"
-                .parse()
-                .map_err(|e| ApiError::Internal { 
-                    message: format!("Invalid content type: {}", e) 
-                })?,
+            "application/json".parse().map_err(|e| ApiError::Internal {
+                message: format!("Invalid content type: {}", e),
+            })?,
         );
         headers.insert(
             "anthropic-version",
-            "2023-06-01"
-                .parse()
-                .map_err(|e| ApiError::Internal { 
-                    message: format!("Invalid anthropic version: {}", e) 
-                })?,
+            "2023-06-01".parse().map_err(|e| ApiError::Internal {
+                message: format!("Invalid anthropic version: {}", e),
+            })?,
         );
 
         if let Some(custom) = custom_headers {
@@ -264,7 +255,7 @@ impl AnthropicClient {
         // Create base request with required fields
         let default_model = serde_json::json!(DEFAULT_MODEL);
         let model_value = config.body.get("model").unwrap_or(&default_model);
-        
+
         let default_max_tokens = if let Some(model_str) = model_value.as_str() {
             if model_str.contains("claude-3-opus") {
                 4096
@@ -293,12 +284,14 @@ impl AnthropicClient {
 
         // Merge additional configuration from config.body while protecting critical fields
         if let serde_json::Value::Object(mut map) = request_value {
-            if let serde_json::Value::Object(mut body) = serde_json::to_value(&config.body).unwrap_or_default() {
+            if let serde_json::Value::Object(mut body) =
+                serde_json::to_value(&config.body).unwrap_or_default()
+            {
                 // Remove protected fields from config body
                 body.remove("stream");
                 body.remove("messages");
                 body.remove("system");
-                
+
                 // Merge remaining fields from config.body
                 for (key, value) in body {
                     map.insert(key, value);
@@ -350,11 +343,11 @@ impl AnthropicClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| ApiError::AnthropicError { 
+            .map_err(|e| ApiError::AnthropicError {
                 message: format!("Request failed: {}", e),
                 type_: "request_failed".to_string(),
                 param: None,
-                code: None
+                code: None,
             })?;
 
         if !response.status().is_success() {
@@ -362,22 +355,22 @@ impl AnthropicClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(ApiError::AnthropicError { 
+            return Err(ApiError::AnthropicError {
                 message: error,
                 type_: "api_error".to_string(),
                 param: None,
-                code: None
+                code: None,
             });
         }
 
         response
             .json::<AnthropicResponse>()
             .await
-            .map_err(|e| ApiError::AnthropicError { 
+            .map_err(|e| ApiError::AnthropicError {
                 message: format!("Failed to parse response: {}", e),
                 type_: "parse_error".to_string(),
                 param: None,
-                code: None
+                code: None,
             })
     }
 
@@ -422,7 +415,7 @@ impl AnthropicClient {
                 .json(&request)
                 .send()
                 .await
-                .map_err(|e| ApiError::AnthropicError { 
+                .map_err(|e| ApiError::AnthropicError {
                     message: format!("Request failed: {}", e),
                     type_: "request_failed".to_string(),
                     param: None,
@@ -431,9 +424,9 @@ impl AnthropicClient {
                 .bytes_stream();
 
             let mut data = String::new();
-            
+
             while let Some(chunk) = stream.next().await {
-                let chunk = chunk.map_err(|e| ApiError::AnthropicError { 
+                let chunk = chunk.map_err(|e| ApiError::AnthropicError {
                     message: format!("Stream error: {}", e),
                     type_: "stream_error".to_string(),
                     param: None,
@@ -452,6 +445,7 @@ impl AnthropicClient {
                         if let Some(data_line) = event_data.lines().nth(1) {
                             if data_line.starts_with("data: ") {
                                 let json_data = &data_line["data: ".len()..];
+                                // info!("json_data: {:?}", json_data);
                                 if let Ok(event) = serde_json::from_str::<StreamEvent>(json_data) {
                                     yield event;
                                 }

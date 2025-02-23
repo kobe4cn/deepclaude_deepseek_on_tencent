@@ -31,6 +31,7 @@ const examples = {
 -H 'Accept: application/json'
 -H 'X-DeepSeek-API-Token: <YOUR_DEEPSEEK_API_TOKEN>'
 -H 'X-Anthropic-API-Token: <YOUR_ANTHROPIC_API_TOKEN>'
+-H 'X-Qwen-API-Token: <YOUR_QWEN_API_TOKEN>'
 -d '{
   "stream": false,
   "verbose": false,
